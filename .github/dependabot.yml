@@ -1,0 +1,40 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # fix(deps) for runtime dependencies, so updates trigger a release;
+    # chore(deps-dev) for tooling, which stays out of the changelog.
+    commit-message:
+      prefix: "fix"
+      prefix-development: "chore"
+      include: "scope"
+    # Minor and patch updates land in one PR per dependency type, so each PR
+    # gets the matching prefix. Majors come one by one.
+    groups:
+      production:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      development:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+    ignore:
+      # ESLint majors are upgraded deliberately by hand, not on a weekly PR.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      # Types track the Node.js major in .nvmrc, not the latest release.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      github-actions:
+        patterns: ["*"]
