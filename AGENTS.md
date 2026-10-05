@@ -101,6 +101,8 @@ The site is operated in Germany and must comply with GDPR and German law.
 - All changes go on a branch named `<type>/<short-slug>`
   (e.g. `feat/hero-section`) and through a pull request. The maintainer may
   push to `main` directly; agents never do, unless explicitly asked.
+- A pull request is ready only when the `check` CI job is green on its latest
+  commit. Watch it with `gh pr checks --watch`.
 - Never force-push or merge a pull request without explicit approval. The
   maintainer performs the final merge.
 - Keep changes focused on the task. Do not refactor or reformat unrelated code.
