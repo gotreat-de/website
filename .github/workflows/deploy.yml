@@ -2,8 +2,9 @@ name: Deploy
 run-name: Deploy v${{ inputs.version }} to production
 
 # The repo's entry point for a deploy: release.yml calls it after a release, and it can be dispatched by hand
-# for the current release. The deploy itself is the shared workflow of skill-platform-workflows; what it needs
-# from this repo is configuration: the `production` environment and the variable DOKPLOY_BASE_URL.
+# for the current release. The deploy itself is the org's reusable workflow in gotreat-de/.github, pinned by
+# commit SHA; what it needs from this repo is configuration: the `production` environment and the variable
+# DOKPLOY_BASE_URL.
 
 on:
   workflow_call:
@@ -35,7 +36,7 @@ permissions:
 jobs:
   deploy:
     name: Deploy
-    uses: Nachhilfe-Leon-Weimann/skill-platform-workflows/.github/workflows/deploy.yml@v1
+    uses: gotreat-de/.github/.github/workflows/deploy.yml@3fae5c1c7bb8070ef9f35f22aff37406a956c609 # v1.0.0
     with:
       version: ${{ inputs.version }}
       sha: ${{ inputs.sha || github.sha }}
