@@ -38,3 +38,17 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # build(deps): base image bumps stay out of the changelog and do not cut a
+    # release on their own; they ship with the next release.
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    ignore:
+      # The Node.js major tracks .nvmrc, not the latest release.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
