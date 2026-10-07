@@ -7,10 +7,12 @@ tsconfig.tsbuildinfo
 # Local env files and secrets are never baked into the image.
 .env*
 
-# Version control, CI, and editor settings.
+# Version control, CI, editor settings, agent worktrees, OS clutter.
 .git
 .github
 .vscode
+.claude
+.DS_Store
 
 # Docs are not needed to build the site.
 *.md
