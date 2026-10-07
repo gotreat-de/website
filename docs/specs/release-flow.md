@@ -1,8 +1,8 @@
 # Spec: Release flow (release-please, image build in GitHub Actions, deploy to Dokploy)
 
 > Status: Decided 2026-10-07, implementation in progress. P0 lands in two PRs (`feat/container-image`,
-> `ci/release-flow`); the first release through the flow is `v0.1.0`, deployed to the temporary host
-> `next.gotreat.de`. The cutover of `gotreat.de` from Hostinger hosting to the VPS is P1.
+> `ci/release-flow`); the first release through the flow is `v0.1.0`, deployed straight to `gotreat.de`. The DNS
+> cutover from Hostinger hosting to the VPS is therefore part of the first release (P0-4), not a later step.
 > This spec is also the decision record: _Decided defaults_, _Verified behavior_ and _Trade-offs accepted_ carry
 > the why. It adopts the platform contract of the skill-platform
 > ([skillforge `release-flow.md`][skillforge-spec]) and deviates only where this repo differs.
@@ -31,8 +31,8 @@ website service yet.
 ## Non-goals
 
 - **Preview deployments per pull request.** Designed, deferred, tracked in [#6][preview-issue].
-- **A staging environment.** Production only; `next.gotreat.de` is a temporary verification host during the
-  migration, not a second environment.
+- **A staging environment.** Production only, and no temporary verification host: the first release goes
+  straight to `gotreat.de`.
 - **Automatic rollback.** Re-dispatch `Deploy` with an earlier version, or fix forward (as in skill-platform).
 - **Static export.** `output: "export"` with nginx was considered: smaller image, but a hand-written nginx
   config that must mirror Next.js routing, no `next/image` optimisation, no route handlers (no `/health`).
@@ -47,7 +47,7 @@ website service yet.
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A - Release mechanism**        | [release-please](https://github.com/googleapis/release-please) via `googleapis/release-please-action` v5, pinned by SHA, manifest config (`release-please-config.json`, `.release-please-manifest.json`), `release-type: node`.                                                                                                                                               | Same tool and config shape as skillsite. Manifest mode is required for `extra-files`, `initial-version` and the pre-1.0 flags.                                                                                                                                                                                                                                                                                  |
 | **B - First version**            | Manifest `{".": "0.0.0"}` plus `"initial-version": "0.1.0"`. The first release PR is `chore(main): release 0.1.0`, creates tag `v0.1.0` and a changelog over the whole history.                                                                                                                                                                                               | `package.json` is already at `0.1.0` but no tag exists. A manifest at `0.1.0` would make release-please treat `0.1.0` as released: the first release would be `0.2.0` with a compare link to a tag that does not exist.                                                                                                                                                                                         |
-| **C - Pre-1.0 versioning**       | `bump-minor-pre-major: true`, `bump-patch-for-minor-pre-major: false`: `feat` bumps the minor, `fix` the patch, a breaking change stays below `1.0.0`. `1.0.0` is declared deliberately with a `Release-As: 1.0.0` commit footer at the DNS cutover.                                                                                                                          | Nothing is live on the VPS yet; `1.0.0` should mark the launch, not fall out of one `!`.                                                                                                                                                                                                                                                                                                                        |
+| **C - Pre-1.0 versioning**       | `bump-minor-pre-major: true`, `bump-patch-for-minor-pre-major: false`: `feat` bumps the minor, `fix` the patch, a breaking change stays below `1.0.0`. `1.0.0` is declared deliberately with a `Release-As: 1.0.0` commit footer once the site is complete (legal pages in place).                                                                                            | Nothing is live on the VPS yet; `1.0.0` should mark the launch, not fall out of one `!`.                                                                                                                                                                                                                                                                                                                        |
 | **D - Changelog**                | `changelog-sections` as in skillsite: `feat`, `fix`, `perf`, `revert` visible; everything else hidden. Dependabot `fix(deps)` bumps keep producing patch releases and changelog lines; `chore(deps-dev)`, `ci(deps)` and `build(deps)` stay internal.                                                                                                                         | Matches the Dependabot prefixes already in `.github/dependabot.yml`; a runtime dependency bump should ship.                                                                                                                                                                                                                                                                                                     |
 | **E - Release PR author**        | A new GitHub App **`gotreat-automation`** owned by the gotreat-de org, installed on this repository only. release-please runs with its installation token (`actions/create-github-app-token`). The App is general-purpose: release-please now, triage and other automation later.                                                                                             | PRs opened with `GITHUB_TOKEN` never get a workflow run, so the required check `check` would never report; and the `main` ruleset requires signed commits, which GitHub grants to REST-created commits only when authenticated as an App. The skill-platform App cannot be reused without making it public and copying its key anyway.                                                                          |
 | **F - App credential names**     | Org-level variable `RELEASE_APP_CLIENT_ID` and org-level secret `RELEASE_APP_PRIVATE_KEY` (selected repositories), despite the App's general name.                                                                                                                                                                                                                            | The shared `skill-platform-workflows` callers (`triage.yml`, and the conventions around `deploy.yml`) read exactly these names. Keeping them means a later triage adoption is a copy of the caller, not a rename.                                                                                                                                                                                               |
@@ -59,7 +59,7 @@ website service yet.
 | **L - Dokploy service model**    | A Dokploy **organization for GoTreat** (exists, created by the maintainer), project `gotreat-website`, environment `production`, **compose** service `website` (`sourceType: raw`). `compose.yml` in the repo root pins `image: ghcr.io/gotreat-de/website:vX.Y.Z # x-release-please-version`; release-please moves the pin in the release commit (`generic` extra-file).     | Uniform with skillsite; `main` records what production runs; Dokploy runs the compose it stores, so every deploy stores the released file first. The separate organization scopes the API key: it cannot reach the skill-platform projects.                                                                                                                                                                     |
 | **M - Health contract**          | `GET /health` answers `{"status":"ok","version":"X.Y.Z"}` with the version from `package.json`, `export const dynamic = "force-static"`, `Cache-Control: no-store`.                                                                                                                                                                                                           | The shared deploy script parses the body with `jq` (`.status == "ok" and .version == $version`), so extra fields would not break it; the contract stays at exactly these two fields anyway. release-please bumps `package.json`, so the version in the image is correct by construction.                                                                                                                        |
 | **N - Configuration placement**  | Org-level variable `RELEASE_APP_CLIENT_ID` and org-level secret `RELEASE_APP_PRIVATE_KEY` (one App, one key for every repo that adopts it); repository variable `DOKPLOY_BASE_URL`; environment `production` (deployment branches: `main`) with secret `DOKPLOY_API_KEY` and variables `DOKPLOY_COMPOSE_ID`, `HEALTH_URL`.                                                    | `vars.DOKPLOY_BASE_URL` in the shared workflow resolves against the _calling_ repo and org; the Nachhilfe org variable does not reach gotreat-de. The App credentials live once at org level, as in skill-platform, so a key rotation is one change. Caveat: on the Free plan org variables and secrets do not reach private repos; if this repo ever becomes private, they must be copied to repository level. |
-| **O - Migration**                | Production is verified on the temporary host `next.gotreat.de` first; `gotreat.de` and `www.gotreat.de` are added to the Dokploy service only at cutover.                                                                                                                                                                                                                     | Dokploy's Traefik issues certificates with HTTP-01 only, so a host whose DNS still points at Hostinger would fail every challenge. `HEALTH_URL` points at `next.gotreat.de` until the cutover.                                                                                                                                                                                                                  |
+| **O - Migration**                | No temporary host: the Dokploy service carries `gotreat.de` and `www.gotreat.de` from the start, and DNS moves to the VPS right before the first deploy.                                                                                                                                                                                                                      | The maintainer wants the site on `gotreat.de` directly. Dokploy's Traefik issues certificates with HTTP-01 only, so DNS must point at the VPS before the certificate and the deploy's health check can succeed; a deploy that runs earlier is red and is re-dispatched after the cutover.                                                                                                                       |
 | **P - Dependabot for the image** | `package-ecosystem: docker`, weekly, commit prefix `build` with scope; Node majors ignored (the major follows `.nvmrc`).                                                                                                                                                                                                                                                      | A base-image patch rides along with the next release instead of forcing one.                                                                                                                                                                                                                                                                                                                                    |
 
 ## Verified behavior
@@ -95,7 +95,7 @@ Unverified until the first release or a manual check, listed so nobody mistakes 
 - **The Vercel GitHub App** installed on the gotreat-de org: whether a Vercel project is linked to this repo and
   builds PRs in parallel. To be decided by the maintainer (uninstall or exclude the repo).
 - **Legal pages.** `src/app` has only the layout and the homepage. Impressum and Datenschutzerklärung must exist
-  and be linked before any public host serves the site, `next.gotreat.de` included. They are written by the
+  and be linked before `gotreat.de` serves the new site. They are written by the
   maintainer, never by an agent.
 
 ## Trade-offs accepted
@@ -112,8 +112,9 @@ Unverified until the first release or a manual check, listed so nobody mistakes 
   landing page.
 - **The image is built twice per release.** `check` runs `next build` and the `Dockerfile` builds again; the
   Actions cache keeps the second build short, and minutes are free on a public repo.
-- **A short TLS window at cutover.** Traefik can only obtain the certificate for `gotreat.de` after DNS points
-  at the VPS. Mitigated by low TTLs and a quiet hour, not avoided.
+- **A short outage at cutover.** Between the DNS change and the first successful deploy, `gotreat.de` answers
+  from the VPS without the site, and Traefik can only obtain the certificate after DNS points there. Mitigated
+  by low TTLs, a quiet hour and doing the cutover right before merging the release PR, not avoided.
 
 ## Target shape
 
@@ -148,7 +149,7 @@ feature branch -> PR (CI: job "check" green, code-owner review) -> squash merge 
 - **Org-level variable** `RELEASE_APP_CLIENT_ID` and **org-level secret** `RELEASE_APP_PRIVATE_KEY`, granted to selected
   repositories including this one. **Repository variable** `DOKPLOY_BASE_URL` (`https://vps.leonweimann.de`).
 - **Environment `production`:** secret `DOKPLOY_API_KEY`; variables `DOKPLOY_COMPOSE_ID`, `HEALTH_URL`
-  (`https://next.gotreat.de/health` until cutover, then `https://gotreat.de/health`). Deployment branches
+  (`https://gotreat.de/health`). Deployment branches
   restricted to `main`. No required reviewer: merging the release PR is the approval.
 - **Image:** `ghcr.io/gotreat-de/website`, tags `vX.Y.Z`, `sha-<12>`, `latest`, `linux/amd64`, public.
 - **Merging:** squash via the PR, auto-merge allowed; the PR title is the conventional commit message.
@@ -166,13 +167,16 @@ Settings, Apps, Dokploy and DNS are changed by the maintainer, never from a PR.
    access to selected repositories including this one. _(Done 2026-10-07.)_
 2. **Repository variable** `DOKPLOY_BASE_URL=https://vps.leonweimann.de`.
 3. **Environment `production`:** deployment branches `main` only; secret `DOKPLOY_API_KEY`; variables
-   `DOKPLOY_COMPOSE_ID`, `HEALTH_URL=https://next.gotreat.de/health`.
+   `DOKPLOY_COMPOSE_ID`, `HEALTH_URL=https://gotreat.de/health`.
 4. **Dokploy** (GoTreat organization): check the version (>= 0.25.0) and the Let's Encrypt email under _Web
    Server_. Create project `gotreat-website`; in its `production` environment a compose service `website`,
    source _raw_, with the repo's `compose.yml` pasted once as a placeholder (every deploy overwrites it). Add
-   the domain `next.gotreat.de` (service `web`, port 3000, HTTPS, Let's Encrypt). Note the compose id. Create an
+   the domains `gotreat.de` and `www.gotreat.de` (service `web`, port 3000, HTTPS, Let's Encrypt). Note the compose id. Create an
    API key under _Settings → Profile → API Keys_ for this organization (rate limiting off, expiry set).
-5. **Hostinger DNS:** A record `next` → `72.62.36.31`. Nothing else changes before cutover.
+5. **Hostinger DNS cutover**, right before merging the release PR: export the zone, lower the TTL of `@` and
+   `www` a day ahead, switch the CDN off in hPanel, set `A @` and `A www` to `72.62.36.31`, remove AAAA records
+   unless the VPS has IPv6, leave MX and TXT records untouched. Traefik issues the certificates once the records
+   resolve to the VPS.
 6. **GHCR:** after the first image push, _Package settings → Change visibility → Public_. Until then the first
    deploy cannot pull; re-dispatch `Deploy` afterwards.
 7. **After the first release PR:** confirm its commit shows _Verified_ and `check` ran. If the ruleset still
@@ -214,7 +218,8 @@ Settings, Apps, Dokploy and DNS are changed by the maintainer, never from a PR.
 - _Acceptance criteria:_
   - [ ] Merging the release PR creates tag `v0.1.0`, the GitHub release, the image
         `ghcr.io/gotreat-de/website:v0.1.0` and a green `deploy` job.
-  - [ ] `https://next.gotreat.de/health` answers `{"status":"ok","version":"0.1.0"}`.
+  - [ ] DNS for `gotreat.de` and `www.gotreat.de` points at the VPS and Traefik holds certificates for both.
+  - [ ] `https://gotreat.de/health` answers `{"status":"ok","version":"0.1.0"}`.
 
 **P0-5 - Docs.** `AGENTS.md` describes the flow (release PR is the release, never bump versions or edit
 `CHANGELOG.md` by hand, the signing exception of decision G, `/health` contract) and points here; `README.md`
@@ -224,17 +229,11 @@ has a one-line pointer.
 
 ### Nice-to-have (P1)
 
-**P1-1 - Cutover of `gotreat.de` to the VPS**, after P0-4 and after the legal pages exist.
+**P1-1 - After the cutover.**
 
-1. Export the Hostinger DNS zone; lower the TTL of `@` and `www` a day ahead.
-2. Add `gotreat.de` and `www.gotreat.de` to the Dokploy compose service (service `web`, port 3000, HTTPS,
-   Let's Encrypt) and redeploy from the UI.
-3. In hPanel switch the CDN off, set `A @` and `A www` to `72.62.36.31`, remove AAAA records unless the VPS has
-   IPv6, leave MX and TXT records untouched.
-4. Watch Traefik issue the certificates; verify `https://gotreat.de/health`.
-5. Set `HEALTH_URL` to `https://gotreat.de/health`; remove `next.gotreat.de` from Dokploy and DNS.
-6. Declare `1.0.0` with a `Release-As: 1.0.0` footer on the next merge, then cancel Hostinger hosting (keep the
-   domain and DNS).
+1. Declare `1.0.0` with a `Release-As: 1.0.0` footer on a later merge, once the legal pages exist.
+2. Cancel Hostinger hosting (keep the domain and DNS) after checking that mail and the registration do not
+   depend on it.
 
 - [ ] Done.
 
@@ -250,7 +249,7 @@ will be driven from Actions: one Dokploy application per PR from the `sha-` imag
 
 ## Open questions
 
-- **Legal pages:** who adds Impressum and Datenschutzerklärung, and when; they gate P1-1 and every public host.
+- **Legal pages:** who adds Impressum and Datenschutzerklärung, and when; they gate the cutover (P0-4) and every public host.
   The Datenschutzerklärung must name the VPS provider as processor after the cutover.
 - **Repository visibility:** `AGENTS.md` calls the repo private and proprietary; it is public. Decision J and N
   assume public. Decide which one is right.
