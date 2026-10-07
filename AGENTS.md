@@ -153,20 +153,21 @@ signs automatically.
   then retry. Never fall back to an unsigned commit.
 - Rewriting history (amend, rebase) must keep commits signed.
 - Exception: the commits of the release PR are created through the GitHub App
-  and signed by GitHub; release tags are lightweight tags created by the
-  Releases API.
+  and are expected to carry GitHub's bot signature; release tags are
+  lightweight tags created by the Releases API.
 
 ## Releases
 
 Releases run through release-please. It keeps a release PR open on `main`;
 merging that PR is the release. The release workflow then builds the container
-image, pushes it to GHCR, and deploys it via Dokploy, which verifies the
-running version through `/health`.
+image, pushes it to GHCR, and deploys it via Dokploy; the deploy workflow
+then verifies the running version through `/health`.
 
 - Never bump the version, edit `CHANGELOG.md`, or create release tags by hand.
 - The `image:` line in `compose.yml` is managed by release-please; do not edit
   its version.
-- Keep the `/health` contract: it answers with at least `status` and `version`.
+- Keep the `/health` contract: it answers exactly
+  `{"status":"ok","version":"<package.json version>"}`.
 - Deployment config lives in `.github/workflows/` and `compose.yml`; change it
   only when asked.
 
