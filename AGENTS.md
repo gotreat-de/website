@@ -133,7 +133,7 @@ chore: update next to 16.3.9
 
 Keep the subject under 72 characters. Use the body to explain why, not what.
 
-Commit messages on `main` will feed release-please (changelog and version
+Commit messages on `main` feed release-please (changelog and version
 bump), so pick the type deliberately: `feat`, `fix`, `perf`, and `revert`
 appear in the changelog, everything else stays internal. Pull request titles
 follow the same format, since they become the commit message on squash merge.
@@ -152,13 +152,27 @@ signs automatically.
   approval prompt), stop and ask the human you are working with to fix it,
   then retry. Never fall back to an unsigned commit.
 - Rewriting history (amend, rebase) must keep commits signed.
+- Exception: the commits of the release PR are created through the GitHub App
+  and are expected to carry GitHub's bot signature; release tags are
+  lightweight tags created by the Releases API.
 
 ## Releases
 
-Releases are planned to run through release-please. Until that flow exists and
-afterwards: never bump the version, edit `CHANGELOG.md`, or create release tags
-by hand. Deployment is not decided yet; do not add deployment config without
-being asked.
+Releases run through release-please. It keeps a release PR open on `main`;
+merging that PR is the release. The release workflow then builds the container
+image, pushes it to GHCR, and deploys it via Dokploy; the deploy workflow
+then verifies the running version through `/health`.
+
+- Never bump the version, edit `CHANGELOG.md`, or create release tags by hand.
+- The `image:` line in `compose.yml` is managed by release-please; do not edit
+  its version.
+- Keep the `/health` contract: it answers exactly
+  `{"status":"ok","version":"<package.json version>"}`.
+- Deployment config lives in `.github/workflows/` and `compose.yml`; change it
+  only when asked.
+
+The decision record is
+[`docs/specs/release-flow.md`](docs/specs/release-flow.md).
 
 ## Secrets
 
