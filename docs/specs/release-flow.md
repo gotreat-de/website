@@ -1,8 +1,8 @@
 # Spec: Release flow (release-please, image build in GitHub Actions, deploy to Dokploy)
 
-> Status: Decided 2026-10-07, implementation in progress. P0 lands in two PRs (`feat/container-image`,
-> `ci/release-flow`); the first release through the flow is `v0.1.0`, deployed straight to `gotreat.de`. The DNS
-> cutover from Hostinger hosting to the VPS is therefore part of the first release (P0-4), not a later step.
+> Status: Implemented. P0 landed in `feat/container-image` (#8) and `ci/release-flow` (#7); `v0.1.0` was released
+> through the flow on 2026-10-07 and is live on `gotreat.de` (`/health` reports `0.1.0`). The DNS cutover from
+> Hostinger hosting to the VPS happened before the first deploy. The deploy workflow lives in `gotreat-de/.github`.
 > This spec is also the decision record: _Decided defaults_, _Verified behavior_ and _Trade-offs accepted_ carry
 > the why. It adopts the platform contract of the skill-platform
 > ([skillforge `release-flow.md`][skillforge-spec]) and deviates only where this repo differs.
@@ -54,7 +54,7 @@ website service yet.
 | **G - Signatures**               | Feature commits are GitHub-signed by the squash merge. The release commit is created through the REST API as the App and shows as _Verified_ (bot signature). Release tags are lightweight: the Releases API creates them without a tag object. `AGENTS.md` records this exception to "all commits and tags must be signed".                                              | Satisfies the ruleset (`required_signatures` checks commits, the tag ruleset only forbids deletion and update).                                                                                                                                                                                                                                                                                                 |
 | **H - Image**                    | Multi-stage `Dockerfile`, `output: "standalone"`, `node:26.x.y-slim` base written literally in every `FROM` line, pnpm from the `packageManager` pin, non-root user, `HOSTNAME=0.0.0.0`, `PORT=3000`, `HEALTHCHECK` through `node -e fetch(...)`. Built by `build.yml` (`workflow_call` + `workflow_dispatch`), `linux/amd64`, `provenance: false`, cache `type=gha`.     | Standalone keeps every Next.js feature and mirrors skillsite's image. `HOSTNAME` must be explicit because Docker injects the container id and Next's `server.js` binds to it. Dependabot's docker parser only matches literal `FROM image:tag` lines, never `FROM node:${ARG}`. `provenance: false` avoids untagged attestation manifests in the package.                                                       |
 | **I - Image tags**               | `ghcr.io/gotreat-de/website:vX.Y.Z` (the `v` kept so tag, image and compose pin read the same), `:sha-<12>`, `:latest`. Nothing deploys from `latest`.                                                                                                                                                                                                                    | Same scheme as skillsite.                                                                                                                                                                                                                                                                                                                                                                                       |
-| **J - Package visibility**       | The GHCR package `website` is switched to **public** once after the first push (irreversible).                                                                                                                                                                                                                                                                            | The repository is public; a public package lets Dokploy pull anonymously, so no registry credential is stored in Dokploy.                                                                                                                                                                                                                                                                                       |
+| **J - Package visibility**       | The GHCR package `website` stays **private**. Dokploy pulls it with a registry credential configured in the GoTreat Dokploy organization (a token with `read:packages`).                                                                                                                                                                                                  | Decided by the maintainer after the first release: the image is not meant to be public even though the repository is. The credential lives in Dokploy only; nothing in the repo or the workflows changes.                                                                                                                                                                                                       |
 | **K - Deploy transport**         | The org's own reusable workflow `gotreat-de/.github/.github/workflows/deploy.yml`, a copy of the skill-platform one, called from this repo's thin `deploy.yml` and pinned by commit SHA with a version comment like every other action: `compose.update` with the released `compose.yml` (raw), `compose.deploy`, poll `deployment.allByCompose`, poll `HEALTH_URL`.      | No dependency on another org: the maintainer owns both repos. The only code that talks to Dokploy lives in one place with its tests; Dependabot's github-actions group bumps the pin when `.github` tags a new version, and rolling a caller back is pinning the earlier SHA.                                                                                                                                   |
 | **L - Dokploy service model**    | A Dokploy **organization for GoTreat** (exists, created by the maintainer), project `gotreat-website`, environment `production`, **compose** service `website` (`sourceType: raw`). `compose.yml` in the repo root pins `image: ghcr.io/gotreat-de/website:vX.Y.Z # x-release-please-version`; release-please moves the pin in the release commit (`generic` extra-file). | Uniform with skillsite; `main` records what production runs; Dokploy runs the compose it stores, so every deploy stores the released file first. The separate organization scopes the API key: it cannot reach the skill-platform projects.                                                                                                                                                                     |
 | **M - Health contract**          | `GET /health` answers `{"status":"ok","version":"X.Y.Z"}` with the version from `package.json`, `export const dynamic = "force-static"`, `Cache-Control: no-store`.                                                                                                                                                                                                       | The shared deploy script parses the body with `jq` (`.status == "ok" and .version == $version`), so extra fields would not break it; the contract stays at exactly these two fields anyway. release-please bumps `package.json`, so the version in the image is correct by construction.                                                                                                                        |
@@ -106,8 +106,8 @@ Unverified until the first release or a manual check, listed so nobody mistakes 
   on another org's repo, and the script changes rarely.
 - **A Dokploy API key in GitHub.** It lives only in the `production` environment, restricted to `main`, and is
   scoped to the GoTreat Dokploy organization.
-- **The GHCR package is public, irreversibly.** Consistent with the public repository; nothing in the image is
-  not in the repo.
+- **A registry credential in Dokploy.** The package is private, so Dokploy holds a GitHub token with
+  `read:packages`. It has to be rotated with the other credentials, and a deploy fails loudly if it expires.
 - **Seconds of downtime per production deploy.** A `docker-compose` service is recreated, not rolled. Fine for a
   landing page.
 - **The image is built twice per release.** `check` runs `next build` and the `Dockerfile` builds again; the
@@ -151,7 +151,8 @@ feature branch -> PR (CI: job "check" green, code-owner review) -> squash merge 
 - **Environment `production`:** secret `DOKPLOY_API_KEY`; variables `DOKPLOY_COMPOSE_ID`, `HEALTH_URL`
   (`https://gotreat.de/health`). Deployment branches
   restricted to `main`. No required reviewer: merging the release PR is the approval.
-- **Image:** `ghcr.io/gotreat-de/website`, tags `vX.Y.Z`, `sha-<12>`, `latest`, `linux/amd64`, public.
+- **Image:** `ghcr.io/gotreat-de/website`, tags `vX.Y.Z`, `sha-<12>`, `latest`, `linux/amd64`, private (pulled
+  with Dokploy's registry credential).
 - **Merging:** squash via the PR, auto-merge allowed; the PR title is the conventional commit message.
 - **Conventions:** every action pinned by full SHA with a version comment, kept current by Dependabot's
   `github-actions` group; `docker` ecosystem for the base image.
@@ -177,8 +178,9 @@ Settings, Apps, Dokploy and DNS are changed by the maintainer, never from a PR.
    `www` a day ahead, switch the CDN off in hPanel, set `A @` and `A www` to `72.62.36.31`, remove AAAA records
    unless the VPS has IPv6, leave MX and TXT records untouched. Traefik issues the certificates once the records
    resolve to the VPS.
-6. **GHCR:** after the first image push, _Package settings → Change visibility → Public_. Until then the first
-   deploy cannot pull; re-dispatch `Deploy` afterwards.
+6. **Registry credential in Dokploy:** a GitHub token with `read:packages` for `ghcr.io`, so the private package
+   can be pulled. Without it the first deploy ends in `error`; add the credential and re-dispatch `Deploy`.
+   _(Done 2026-10-07.)_
 7. **After the first release PR:** confirm its commit shows _Verified_ and `check` ran. If the ruleset still
    blocks it, add the App as a bypass actor for the `main` ruleset.
 
@@ -191,9 +193,9 @@ Settings, Apps, Dokploy and DNS are changed by the maintainer, never from a PR.
 - _Technique:_ `Dockerfile`, `.dockerignore`, `output: "standalone"` in `next.config.ts`, `src/app/health/route.ts`
   (decision M), `compose.yml` with the annotated pin at `v0.1.0`, Dependabot `docker` entry (decision P).
 - _Acceptance criteria:_
-  - [ ] `docker build` succeeds locally and `docker run -p 3000:3000` answers `GET /health` with
-        `{"status":"ok","version":"0.1.0"}`.
-  - [ ] `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build` stay green.
+  - [x] `docker build` succeeds locally and `docker run -p 3000:3000` answers `GET /health` with
+        `{"status":"ok","version":"0.1.0"}`. _(#8)_
+  - [x] `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build` stay green. _(#8)_
 
 **P0-2 - release-please with the gotreat-automation App** (PR `ci: add release flow with release-please`).
 
@@ -201,25 +203,29 @@ Settings, Apps, Dokploy and DNS are changed by the maintainer, never from a PR.
   `.release-please-manifest.json` at `0.0.0`, `release.yml` job `release-please` with the App token and nothing
   after the action.
 - _Acceptance criteria:_
-  - [ ] After the merge, a release PR `chore(main): release 0.1.0` exists whose diff touches exactly
-        `package.json` (no-op), `CHANGELOG.md`, `compose.yml` (no-op at `v0.1.0`) and the manifest.
-  - [ ] Its head commit is _Verified_ and its `check` run executes and is green.
+  - [x] After the merge, a release PR `chore(main): release 0.1.0` exists whose diff touches exactly
+        `package.json` (no-op), `CHANGELOG.md`, `compose.yml` (no-op at `v0.1.0`) and the manifest. _(#9)_
+  - [x] Its head commit is _Verified_ and its `check` run executes and is green. _(#9: Verified as
+        `gotreat-automation[bot]`; `check` first failed on Prettier over the generated files, fixed by #10,
+        then green against the updated `main`.)_
 
 **P0-3 - Build and deploy hang off `release_created`** (same PR as P0-2).
 
 - _Technique:_ `build.yml` (decision H and I), `deploy.yml` as the thin caller from the `gotreat-de/.github`
   README; `release.yml` chains `release-please` → `image` → `deploy`.
 - _Acceptance criteria:_
-  - [ ] A push to `main` that is not a release runs release-please only; image and deploy are skipped.
-  - [ ] A `dry_run` dispatch of `Deploy` is green against the GoTreat Dokploy compose service.
+  - [x] A push to `main` that is not a release runs release-please only; image and deploy are skipped. _(the
+        pushes of #7 and #10)_
+  - [x] A `dry_run` dispatch of `Deploy` is green against the GoTreat Dokploy compose service. _(2026-10-07)_
 
 **P0-4 - First release.**
 
 - _Acceptance criteria:_
-  - [ ] Merging the release PR creates tag `v0.1.0`, the GitHub release, the image
-        `ghcr.io/gotreat-de/website:v0.1.0` and a green `deploy` job.
-  - [ ] DNS for `gotreat.de` and `www.gotreat.de` points at the VPS and Traefik holds certificates for both.
-  - [ ] `https://gotreat.de/health` answers `{"status":"ok","version":"0.1.0"}`.
+  - [x] Merging the release PR creates tag `v0.1.0`, the GitHub release, the image
+        `ghcr.io/gotreat-de/website:v0.1.0` and a green `deploy` job. _(The release run's deploy was red: the
+        private package could not be pulled yet. Green after the registry credential was added in Dokploy.)_
+  - [x] DNS for `gotreat.de` and `www.gotreat.de` points at the VPS and Traefik holds certificates for both.
+  - [x] `https://gotreat.de/health` answers `{"status":"ok","version":"0.1.0"}`. _(2026-10-07)_
 
 **P0-5 - Docs.** `AGENTS.md` describes the flow (release PR is the release, never bump versions or edit
 `CHANGELOG.md` by hand, the signing exception of decision G, `/health` contract) and points here; `README.md`
@@ -251,8 +257,8 @@ will be driven from Actions: one Dokploy application per PR from the `sha-` imag
 
 - **Legal pages:** who adds Impressum and Datenschutzerklärung, and when; they gate the cutover (P0-4) and every public host.
   The Datenschutzerklärung must name the VPS provider as processor after the cutover.
-- **Repository visibility:** `AGENTS.md` calls the repo private and proprietary; it is public. Decision J and N
-  assume public. Decide which one is right.
+- **Repository visibility:** `AGENTS.md` calls the repo private and proprietary; it is public. Decision N
+  assumes public (org-level secrets reach it on the Free plan). Decide which one is right.
 - **Vercel GitHub App** on the org: linked to this repo or not; remove or exclude.
 - **Hostinger:** does mail or the domain registration depend on the hosting plan that P1-1 cancels?
 - **IPv6:** does the VPS have a public IPv6 address that should get AAAA records?
