@@ -1,0 +1,17 @@
+# Dependencies and build output are reinstalled and rebuilt inside the image.
+node_modules
+.next
+out
+tsconfig.tsbuildinfo
+
+# Local env files and secrets are never baked into the image.
+.env*
+
+# Version control, CI, and editor settings.
+.git
+.github
+.vscode
+
+# Docs are not needed to build the site.
+*.md
+docs

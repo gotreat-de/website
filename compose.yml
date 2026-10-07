@@ -1,0 +1,25 @@
+# Production service definition, deployed by Dokploy.
+#
+# The image tag is the deployed version: release-please rewrites the annotated
+# `image:` line in its release commit, so `main` records what production runs.
+# Change the tag by hand only to roll back.
+services:
+  web:
+    image: ghcr.io/gotreat-de/website:v0.1.0 # x-release-please-version
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    expose:
+      - "3000"
+    security_opt:
+      - no-new-privileges:true
+    # The healthcheck ships in the image (see Dockerfile); not duplicated here.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
