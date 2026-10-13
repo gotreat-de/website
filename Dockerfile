@@ -6,7 +6,7 @@
 # Dependabot's docker updater does not resolve ARG-based FROM lines.
 
 # --- Shared base: Node.js plus the pinned pnpm ---
-FROM node:26.10.0-slim AS base
+FROM node:26.11.1-slim AS base
 # Node.js >= 25 no longer bundles Corepack, so install it from npm. Corepack
 # then provides exactly the pnpm version pinned in package.json's
 # `packageManager`, keeping that field the single source of truth.
@@ -32,7 +32,7 @@ COPY . .
 RUN pnpm build
 
 # --- Runtime image ---
-FROM node:26.10.0-slim AS runner
+FROM node:26.11.1-slim AS runner
 # HOSTNAME must be set explicitly: Docker injects the container id as
 # HOSTNAME, and the standalone server would bind to that instead of all
 # interfaces.
