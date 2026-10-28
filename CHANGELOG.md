@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/gotreat-de/website/compare/v0.1.0...v0.1.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deps:** bump next ([#15](https://github.com/gotreat-de/website/issues/15)) ([ee76c41](https://github.com/gotreat-de/website/commit/ee76c412f317e8dea57d58be327214e4da365e05))
+* **deps:** bump the production group with 3 updates ([#19](https://github.com/gotreat-de/website/issues/19)) ([9b581b8](https://github.com/gotreat-de/website/commit/9b581b8debe90e4cbd7adfc8233f9602bd35aa5c))
+
 ## 0.1.0 (2026-10-07)
 
 
