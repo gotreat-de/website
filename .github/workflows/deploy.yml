@@ -36,7 +36,7 @@ permissions:
 jobs:
   deploy:
     name: Deploy
-    uses: gotreat-de/.github/.github/workflows/deploy.yml@3fae5c1c7bb8070ef9f35f22aff37406a956c609 # v1.0.0
+    uses: gotreat-de/.github/.github/workflows/deploy.yml@2ee390e51984b12ff361d2317429e41b7f4576c7 # v1.1.0
     with:
       version: ${{ inputs.version }}
       sha: ${{ inputs.sha || github.sha }}
